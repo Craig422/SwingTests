@@ -10,6 +10,7 @@ import java.awt.event.*;
 import javax.swing.*;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
+import javax.swing.event.MouseInputAdapter;
 
 /**
  * This is a project control panel floating dialog box and contains some
@@ -40,7 +41,7 @@ public class PlaybackPanel extends JFrame {
     /**
      * ButtonScrollPanel is the primary control embedded into the main frame or a floating JFrame
      */
-    private class ButtonScrollPanel extends JPanel implements ActionListener  {
+    private class ButtonScrollPanel extends OpacityJPanel implements ActionListener  {
         //        private Scene scene = null;
 //        private SpeedMenu speedMenu;
         boolean hidden = false;
@@ -120,10 +121,11 @@ public class PlaybackPanel extends JFrame {
 
         public ButtonScrollPanel() {
             JPanel scrollPanel = new JPanel(new BorderLayout());
-//        scrollPanel.setOpaque(false);
+            scrollPanel.setOpaque(false);
             //scrollPanel.setBorder(BorderFactory.createLineBorder(Color.RED));
 
             scroll = new JSlider(0, 100, 50);
+            setOpacity(0.2f);
 
             scroll.addChangeListener(new ChangeListener() {
                 @Override
@@ -144,7 +146,7 @@ public class PlaybackPanel extends JFrame {
              *  CP_UpdateTimer is a class that updates the scrollbar every 100mS
              */
             class CP_UpdateTimer implements Runnable {
-
+                int x=0;
                 @Override
                 public void run() {
 
@@ -154,6 +156,9 @@ public class PlaybackPanel extends JFrame {
                         @Override
                         public void actionPerformed(ActionEvent e) {
 
+                            updateScroll(x++,0,500);
+                            if(x>500)
+                                x=0;
 //                            updateScroll((int) scene.getTimeline().time(), scene.getTimeline().getStartFrame(), scene.getTimeline().getEndFrame());
                         }
                     });
@@ -180,6 +185,7 @@ public class PlaybackPanel extends JFrame {
             scrollPanel.add(new Box.Filler(minSize, prefSize, maxSize), BorderLayout.EAST);
 
             JPanel buttonsPanel = new JPanel();
+            buttonsPanel.setOpaque(false);
             buttonsPanel.add(rewind);
             buttonsPanel.add(leftButton);
             buttonsPanel.add(togglePause);
@@ -243,6 +249,7 @@ public class PlaybackPanel extends JFrame {
             contentPanel.add(fillerRow, gbConstraints);
             owner.setGlassPane(contentPanel);
 
+
             contentPanel.setVisible(true);
             //Hide the JFrame floating control parent
             this.setVisible(false);
@@ -257,18 +264,20 @@ public class PlaybackPanel extends JFrame {
             contentPanel.detachListener();
 
 
+
         }
         embedded = embed;
 
     }
 
 
-    class ContentPanel extends JPanel implements MouseMotionListener,ComponentListener{
+    class ContentPanel extends JPanel implements ComponentListener{
         private JFrame floatingPanel=null;
         JFrame mainFrame = null;
         Timer updateTimer=null;
         Thread uThread = new Thread(new CP_VisbilityTimer());
         private boolean attached=false;
+        GPListener gpListener = new GPListener();
 
 
         /**
@@ -280,7 +289,7 @@ public class PlaybackPanel extends JFrame {
             public void run() {
 
 
-                updateTimer = new Timer(1000, new ActionListener() {
+                updateTimer = new Timer(1500, new ActionListener() {
 
                     @Override
                     public void actionPerformed(ActionEvent e) {
@@ -309,7 +318,10 @@ public class PlaybackPanel extends JFrame {
 
         void attachListener(){
             attached = true;
-            mainFrame.addMouseMotionListener(this);
+
+            mainFrame.addMouseMotionListener(gpListener);
+            mainFrame.addMouseListener(gpListener);
+
 
             if(updateTimer!=null)
                 updateTimer.start();
@@ -317,35 +329,89 @@ public class PlaybackPanel extends JFrame {
 
         void detachListener(){
             attached=false;
-            mainFrame.removeMouseMotionListener(this);
+            mainFrame.removeMouseMotionListener(gpListener);
+            mainFrame.removeMouseListener(gpListener);
 
         }
 
-        @Override
-        public void mouseDragged(MouseEvent e) {
-//            System.out.println(e.getPoint());
-        }
+        class GPListener extends MouseInputAdapter {
 
-        @Override
-        public void mouseMoved(MouseEvent e) {
-            Point containerPoint = e.getPoint();
-            int menuHeight = mainFrame.getJMenuBar().getHeight();
-            if((containerPoint.y > (fillerPadding.getHeight())+menuHeight)
-                    && (containerPoint.y < (fillerPadding.getHeight())+menuHeight+buttonPanel.getHeight())
-                    )
-            {
-                buttonPanel.setHidden(false);
 
-                buttonPanel.repaint();
-                if(updateTimer!=null)
-                    updateTimer.stop();
+            public void mouseMoved(MouseEvent e) {
+                Point glassPanePoint = e.getPoint();
+                if(isMouseOver(glassPanePoint))
+                {
+                    buttonPanel.setHidden(false);
 
-            } else {
+                    buttonPanel.repaint();
+                    if(updateTimer!=null)
+                        updateTimer.stop();
+
+                } else {
                     if(updateTimer!=null)
                         updateTimer.restart();
 
+                }
+                redispatchMouseEvent(e);
             }
+
+            public void mouseDragged(MouseEvent e) {
+                redispatchMouseEvent(e);            }
+
+            public void mouseClicked(MouseEvent e) {
+                redispatchMouseEvent(e);            }
+
+            public void mouseEntered(MouseEvent e) {
+                redispatchMouseEvent(e);            }
+
+            public void mouseExited(MouseEvent e) {
+                redispatchMouseEvent(e);            }
+
+            public void mousePressed(MouseEvent e) {
+                System.out.println("MousePressed");
+                redispatchMouseEvent(e);
+            }
+
+            public void mouseReleased(MouseEvent e) {
+                redispatchMouseEvent(e);            }
+
+
+            private void redispatchMouseEvent(MouseEvent e) {
+                Point glassPanePoint = e.getPoint();
+                Point containerPoint = SwingUtilities.convertPoint(
+                        mainFrame.getGlassPane(),
+                        glassPanePoint,
+                        buttonPanel);
+                Component component =
+                        SwingUtilities.getDeepestComponentAt(
+                                buttonPanel,
+                                containerPoint.x,
+                                containerPoint.y);
+                if (component != null) {
+
+                    Point componentPoint = SwingUtilities.convertPoint(
+                            mainFrame.getGlassPane(),
+                            glassPanePoint,
+                            component);
+                    component.dispatchEvent(new MouseEvent(component,
+                            e.getID(),
+                            e.getWhen(),
+                            e.getModifiers(),
+                            componentPoint.x,
+                            componentPoint.y,
+                            e.getClickCount(),
+                            e.isPopupTrigger()));
+                }
+            }
+
         }
+        boolean isMouseOver(Point containerPoint){
+           int menuHeight = mainFrame.getJMenuBar().getHeight();
+            return ((containerPoint.y > (fillerPadding.getHeight())+menuHeight)
+                    && (containerPoint.y < (fillerPadding.getHeight())+menuHeight+buttonPanel.getHeight())
+                    );
+        }
+
 
         @Override
         public void componentResized(ComponentEvent e) {
